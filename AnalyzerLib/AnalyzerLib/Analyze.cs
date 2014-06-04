@@ -1,19 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections;
+using System.IO;
+using System.Text;
+using System.Reflection;
+using System.Text.RegularExpressions;
 
-// Generated with a commercial .Net converter
-using CommandLine = org.apache.commons.cli.CommandLine;
-using CommandLineParser = org.apache.commons.cli.CommandLineParser;
-using Options = org.apache.commons.cli.Options;
-using PosixParser = org.apache.commons.cli.PosixParser;
-using CsvListReader = org.supercsv.io.CsvListReader;
-using CsvListWriter = org.supercsv.io.CsvListWriter;
-using CsvPreference = org.supercsv.prefs.CsvPreference;
+using NDesk.Options;
+using net.sf.dotnetcli;
 
-
-namespace AnalyzerLib
-{
-    internal static class HashMapGetHelperClass
+namespace analyze {
+     internal static class HashMapGetHelperClass
     {
         internal static TValue GetValueOrNull<TKey, TValue>(this System.Collections.Generic.IDictionary<TKey, TValue> dictionary, TKey key)
         {
@@ -23,408 +20,402 @@ namespace AnalyzerLib
         }
     }
 
-    public class Analyzer
-    {
-        internal static Pattern CONTINUOUS_PATTERN = Pattern.compile("\\-*(\\d+\\.*\\d*)");
-		internal static int categoricalCutoff = 100;
+     internal class Analyze
+     {
 
-		internal class FieldStats
-		{
+         static Regex CONTINUOUS_PATTERN = new Regex("\\-*(\\d+\\.*\\d*)");
+         static int categoricalCutoff = 100;
 
-			internal string fieldname = null;
-			internal int fieldno = -1;
-			internal int continuousCount = 0;
-			internal int categoricalCount = 0;
-			internal int blankCount = 0;
-			internal int analyzeCount = 0;
-			internal int maxWidth = 0;
+         internal class FieldStats
+         {
 
-			//See http://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Online_algorithm
-			internal double mean = 0;
-			internal double meanDelta = 0;
-			internal double M2 = 0;
+             string fieldname = null;
+             int fieldno = -1;
+             int continuousCount = 0;
+             int categoricalCount = 0;
+             int blankCount = 0;
+             int analyzeCount = 0;
+             int maxWidth = 0;
 
-			internal double numericalSum = 0;
-			internal double numericalSumOfSquares = 0;
-			internal bool categoricalStopped = false;
-			internal IDictionary<string, int?> categoricalValues = new Dictionary<string, int?>();
+             //See http://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Online_algorithm
+             double mean = 0;
+             double meanDelta = 0;
+             double M2 = 0;
 
-			internal FieldStats(string fieldname, int fieldno)
-			{
-				this.fieldname = fieldname;
-				this.fieldno = fieldno;
-			}
+             //not used?
+             double numericalSum = 0;
+             double numericalSumOfSquares = 0;
+             bool categoricalStopped = false;
 
-			internal virtual bool Continuous
-			{
-				get
-				{
-					return this.continuousCount + this.blankCount == this.analyzeCount;
-				}
-			}
-
-			internal virtual bool Categorical
-			{
-				get
-				{
-					return !Continuous && !categoricalStopped && this.categoricalCount > 0;
-				}
-			}
-
-			internal virtual bool containsBlanks()
-			{
-				return this.blankCount > 0;
-			}
-
-			internal virtual bool ModelReady
-			{
-				get
-				{
-					return this.Continuous || this.Categorical;
-				}
-			}
-
-			internal virtual int CategoricalDistinctCount
-			{
-				get
-				{
-					return this.categoricalValues.Values.size();
-				}
-			}
-
-			internal virtual bool canCategoricalStop()
-			{
-				if (this.categoricalStopped)
-				{
-					return true;
-				}
-				if (this.CategoricalDistinctCount > categoricalCutoff)
-				{
-					this.categoricalStopped = true;
-					return true;
-				}
-				return false;
-			}
-
-			internal virtual void addCategoricalValue(string fieldval)
-			{
-
-				int? count = this.categoricalValues.GetValueOrNull(fieldval);
-				if (count == null)
-				{
-					this.categoricalValues[fieldval] = 1;
-				}
-				else
-				{
-					this.categoricalValues[fieldval] = count + 1;
-				}
-				this.categoricalCount++;
-			}
-
-			internal virtual void analyzeField(string fieldval, int recno)
-			{
-				this.analyzeCount++;
-				int _width = fieldval.Length;
-				if (_width > this.maxWidth)
-				{
-					this.maxWidth = _width;
-				}
-
-				if (Analyze.isContinuous(fieldval))
-				{
-					this.continuousCount++;
-					double fv = Convert.ToDouble(fieldval);
-
-					this.meanDelta = fv - this.mean;
-					this.mean = this.mean + this.meanDelta / this.analyzeCount;
-					this.M2 = this.M2 + this.meanDelta * (fv - this.mean);
-
-				}
-				else
-				{
-					if (fieldval.Equals(""))
-					{
-						this.blankCount++;
-					}
-					if (!this.canCategoricalStop())
-					{
-						this.addCategoricalValue(fieldval);
-					}
-				}
-			}
-
-			internal virtual double? Mean
-			{
-				get
-				{
-					if (!this.Continuous)
-					{
-						return null;
-					}
-					return this.mean;
-				}
-			}
-
-			internal virtual double? StdDev
-			{
-				get
-				{
-					if (!this.Continuous)
-					{
-						return null;
-					}
-					double variance = this.M2 / (this.analyzeCount - 1);
-					return Math.Sqrt(variance);
-				}
-			}
-
-			internal virtual IList<string> FieldReportRecord
-			{
-				get
-				{
-					int catcount = 0;
-					int catdstcount = 0;
-					int contcount = 0;
-					if (this.Continuous)
-					{
-						contcount = this.continuousCount;
-					}
-					if (this.Categorical)
-					{
-						catcount = this.categoricalCount;
-						catdstcount = this.CategoricalDistinctCount;
-					}
-    
-    
-					IList<string> rec = new List<string>();
-					rec.Add(Convert.ToString(this.fieldno));
-					rec.Add(this.fieldname);
-					rec.Add(Convert.ToString(this.maxWidth));
-					rec.Add(Convert.ToString(this.Continuous));
-					rec.Add(Convert.ToString(this.Categorical));
-					rec.Add(Convert.ToString(this.analyzeCount));
-					rec.Add(Convert.ToString(this.blankCount));
-					rec.Add(Convert.ToString(contcount));
-					rec.Add(Convert.ToString(catcount));
-					rec.Add(Convert.ToString(catdstcount));
-					double? _mean = this.Mean;
-					double? _std_dev = this.StdDev;
-					rec.Add(_mean == null ? "" : Convert.ToString(_mean));
-					rec.Add(_std_dev == null ? "" : Convert.ToString(_std_dev));
-    
-					return rec;
-				}
-			}
-
-			internal virtual IList<IList<string>> FieldValuesReportRecords
-			{
-				get
-				{
-					if (!this.Categorical)
-					{
-						return null;
-					}
-					IList<IList<string>> recs = new List<IList<string>>();
-    
-					foreach (string val in this.categoricalValues.Keys)
-					{
-						IList<string> rec = new List<string>();
-						rec.Add(Convert.ToString(this.fieldno));
-						rec.Add(this.fieldname);
-						rec.Add(val);
-						recs.Add(rec);
-						rec.Add(Convert.ToString(this.categoricalValues.GetValueOrNull(val)));
-					}
-    
-					return recs;
-				}
-			}
-
-			internal static IList<string> FieldReportHeaderRecord
-			{
-				get
-				{
-					IList<string> rec = new List<string>();
-					rec.Add("fieldno");
-					rec.Add("fieldname");
-					rec.Add("max_width");
-					rec.Add("is_continuous");
-					rec.Add("is_categorical");
-					rec.Add("analyze_count");
-					rec.Add("blank_count");
-					rec.Add("continuous_count");
-					rec.Add("categorical_count");
-					rec.Add("categorical_distinct_count");
-					rec.Add("numerical_mean");
-					rec.Add("numerical_std_dev");
-					return rec;
-				}
-			}
-
-			internal static IList<string> FieldValueReportHeaderRecord
-			{
-				get
-				{
-					IList<string> rec = new List<string>();
-					rec.Add("fieldno");
-					rec.Add("fieldname");
-					rec.Add("categorical_value");
-					rec.Add("categorical_count");
-					return rec;
-				}
-			}
-		}
-
-		internal static bool isContinuous(string fieldval)
-		{
-			if (fieldval == null)
-			{
-				return false;
-			}
-			return CONTINUOUS_PATTERN.matcher(fieldval).matches();
-		}
-		
-
-// WARNING: Method 'throws' clauses are not available in .NET:
-// ORIGINAL: public static void analyze(java.util.List<java.io.File> inputFiles, String fieldReport, String fieldValueReport) throws Exception
-		public static void analyze(IList<File> inputFiles, string fieldReport, string fieldValueReport)
-		{
-			if (inputFiles.Count == 0)
-			{
-				throw new Exception("No input files!");
-			}
-			File firstInputFile = inputFiles[0];
-			if (fieldReport == null)
-			{
-				fieldReport = firstInputFile.AbsolutePath + ".fields.csv";
-			}
-			if (fieldValueReport == null)
-			{
-				fieldValueReport = firstInputFile.AbsolutePath + ".fieldvalues.csv";
-			}
-
-			Console.WriteLine("Field Report: " + fieldReport);
-			Console.WriteLine("Field Value Report:" + fieldValueReport);
-
-			FileWriter fieldReportFileWriter = new FileWriter(fieldReport);
-			CsvListWriter fieldReportCsvWriter = new CsvListWriter(fieldReportFileWriter, CsvPreference.EXCEL_PREFERENCE);
-			fieldReportCsvWriter.write(FieldStats.FieldReportHeaderRecord);
-
-			FileWriter fieldValueReportFileWriter = new FileWriter(fieldValueReport);
-			CsvListWriter fieldValueReportCsvWriter = new CsvListWriter(fieldValueReportFileWriter, CsvPreference.EXCEL_PREFERENCE);
-			fieldValueReportCsvWriter.write(FieldStats.FieldValueReportHeaderRecord);
-
-			IDictionary<string, FieldStats> statsdb = new Dictionary<string, FieldStats>();
-
-			string[] headerFields = null;
-			int recno = 0;
-			int headerno = 0;
-			foreach (File inputfile in inputFiles)
-			{
-
-				Console.WriteLine("Analyzing input file " + inputfile.AbsolutePath);
-
-				FileReader fileReader = new FileReader(inputfile);
-				BufferedReader reader = new BufferedReader(fileReader);
-				CsvListReader csvReader = new CsvListReader(reader, CsvPreference.EXCEL_PREFERENCE);
-
-				headerFields = csvReader.getCSVHeader(true);
-				headerno++;
-
-				while (true)
-				{
-					IList<string> rec = csvReader.read();
+             //TODO
+             //Map<String, Integer> categoricalValues = new HashMap<String, Integer>();
+             IDictionary<string, int> categoricalValues = new Dictionary<string, int>();
 
 
-					if (rec == null)
-					{
-						break;
-					}
-					recno++;
+             internal FieldStats(string fieldname, int fieldno)
+             {
+                 this.fieldname = fieldname;
+                 this.fieldno = fieldno;
+             }
 
-					int fieldno = 0;
-					foreach (string fieldname in headerFields)
-					{
-						FieldStats stats = statsdb.GetValueOrNull(fieldname);
-						if (stats == null)
-						{
-							stats = new FieldStats(fieldname, fieldno + 1);
-							statsdb[fieldname] = stats;
-						}
-						string fieldval = rec[fieldno];
-						stats.analyzeField(fieldval, recno);
-						fieldno++;
-					}
-				}
-				fileReader.close();
-			}
+             bool isContinuous()
+             {
+                 return this.continuousCount + this.blankCount == this.analyzeCount;
+             }
 
-			Console.WriteLine("Header CSV records read: " + headerno);
-			Console.WriteLine("Total CSV data records read: " + recno);
+             bool isCategorical()
+             {
+                 return !isContinuous() && !categoricalStopped && this.categoricalCount > 0;
+             }
 
-			foreach (string fieldname in headerFields)
-			{
-				FieldStats stats = statsdb.GetValueOrNull(fieldname);
-				fieldReportCsvWriter.write(stats.FieldReportRecord);
-				IList<IList<string>> catValuesRecords = stats.FieldValuesReportRecords;
+             bool containsBlanks()
+             {
+                 return this.blankCount > 0;
+             }
 
-				if (catValuesRecords != null)
-				{
-					foreach (IList<string> rec in catValuesRecords)
-					{
-						if (rec != null)
-						{
-							fieldValueReportCsvWriter.write(rec);
-						}
-					}
-				}
-			}
+             bool isModelReady()
+             {
+                 return this.isContinuous() || this.isCategorical();
+             }
+
+             int getCategoricalDistinctCount()
+             {
+                 //TODO - need to make sure this is distinct?
+                 // return this.categoricalValues.values().size();
+                 return this.categoricalValues.Count;
+             }
+
+             bool canCategoricalStop()
+             {
+                 if (this.categoricalStopped)
+                 {
+                     return true;
+                 }
+                 if (this.getCategoricalDistinctCount() > categoricalCutoff)
+                 {
+                     this.categoricalStopped = true;
+                     return true;
+                 }
+                 return false;
+             }
+
+             void addCategoricalValue(string fieldval)
+             {
+
+                 int count = this.categoricalValues.GetValueOrNull(fieldval);
+                 if (count < 1)
+                 {
+                     this.categoricalValues[fieldval] = 1;
+                 }
+                 else
+                 {
+                     this.categoricalValues[fieldval] = count + 1;
+                 }
+                 this.categoricalCount++;
+             }
+             internal void analyzeField(string fieldval, int recno)
+             {
+                 this.analyzeCount++;
+                 int _width = fieldval.Length;
+                 if (_width > this.maxWidth)
+                 {
+                     this.maxWidth = _width;
+                 }
+
+                 if (Analyze.isContinuous(fieldval))
+                 {
+                     this.continuousCount++;
+                     double fv = Convert.ToDouble(fieldval);
+
+                     this.meanDelta = fv - this.mean;
+                     this.mean = this.mean + this.meanDelta / this.analyzeCount;
+                     this.M2 = this.M2 + this.meanDelta * (fv - this.mean);
+
+                 }
+                 else
+                 {
+                     if (fieldval == "")
+                     {
+                         this.blankCount++;
+                     }
+                     if (!this.canCategoricalStop())
+                     {
+                         this.addCategoricalValue(fieldval);
+                     }
+                 }
+             }
+             double getMean()
+             {
+                 if (!this.isContinuous())
+                 {
+                     //TODO return -1 instead of NULL for double type?
+                     return -1;
+                 }
+                 return this.mean;
+             }
+
+             double getStdDev()
+             {
+                 if (!this.isContinuous())
+                 {
+                     //TODO return -1 instead of NULL for double type?
+                     return -1;
+                 }
+                 double variance = this.M2 / (this.analyzeCount - 1);
+                 return Math.Sqrt(variance);
+             }
+             internal IList<string> getFieldReportRecord()
+             {
+                 int catcount = 0;
+                 int catdstcount = 0;
+                 int contcount = 0;
+                 if (this.isContinuous())
+                 {
+                     contcount = this.continuousCount;
+                 }
+                 if (this.isCategorical())
+                 {
+                     catcount = this.categoricalCount;
+                     catdstcount = this.getCategoricalDistinctCount();
+                 }
 
 
-			fieldValueReportCsvWriter.close();
-			fieldReportCsvWriter.close();
+                 IList<string> rec = new List<string>();
+                 rec.Add(this.fieldno.ToString());
+                 rec.Add(this.fieldname);
+                 rec.Add(this.maxWidth.ToString());
+                 rec.Add(this.isContinuous().ToString());
+                 rec.Add(this.isCategorical().ToString());
+                 rec.Add(this.analyzeCount.ToString());
+                 rec.Add(this.blankCount.ToString());
+                 rec.Add(contcount.ToString());
+                 rec.Add(catcount.ToString());
+                 rec.Add(catdstcount.ToString());
+                 double _mean = this.getMean();
+                 double _std_dev = this.getStdDev();
+                 //TODO using -1 instead of null
+                 rec.Add(_mean == -1 ? "" : _mean.ToString());
+                 rec.Add(_std_dev == -1 ? "" : _std_dev.ToString());
 
-		}
+                 return rec;
+             }
 
-// WARNING: Method 'throws' clauses are not available in .NET:
-// ORIGINAL: public static void main(String[] args) throws Exception
-		public static void Main(string[] args)
-		{
+             internal IList<IList<string>> getFieldValuesReportRecords()
+             {
+                 if (!this.isCategorical())
+                 {
+                     return null;
+                 }
+                 IList<IList<string>> recs = new List<IList<string>>();
+
+                 foreach (string val in this.categoricalValues.Keys)
+                 {
+                     IList<string> rec = new List<string>();
+                     rec.Add(this.fieldno.ToString());
+                     rec.Add(this.fieldname);
+                     rec.Add(val);
+                     recs.Add(rec);
+                     rec.Add(Convert.ToString(this.categoricalValues.GetValueOrNull(val)));
+                 }
+
+                 return recs;
+             }
+
+             internal static IList<string> getFieldReportHeaderRecord()
+             {
+                 IList<string> rec = new List<string>();
+                 rec.Add("fieldno");
+                 rec.Add("fieldname");
+                 rec.Add("max_width");
+                 rec.Add("is_continuous");
+                 rec.Add("is_categorical");
+                 rec.Add("analyze_count");
+                 rec.Add("blank_count");
+                 rec.Add("continuous_count");
+                 rec.Add("categorical_count");
+                 rec.Add("categorical_distinct_count");
+                 rec.Add("numerical_mean");
+                 rec.Add("numerical_std_dev");
+                 return rec;
+             }
+             internal static IList<string> getFieldValueReportHeaderRecord()
+             {
+                 IList<string> rec = new List<string>();
+                 rec.Add("fieldno");
+                 rec.Add("fieldname");
+                 rec.Add("categorical_value");
+                 rec.Add("categorical_count");
+                 return rec;
+             }
+         }
+         static bool isContinuous(string fieldval)
+         {
+             if (fieldval == null)
+             {
+                 return false;
+             }
+             //TODO
+             return CONTINUOUS_PATTERN.Match(fieldval).Success;
+             
+             
+         }
 
 
-			Options options = new Options();
-			options.addOption("", "field-report", true, "Write the field analysis report to this file. If not specified, then {inputfile}.fields.csv will be used.");
-			options.addOption("", "field-value-report", true, "Write the field values analysis report to this file. If not specified, then {inputfile}.fieldvalues.csv will be used.");
+         internal static void analyze(IList<FileInfo> inputFiles, string fieldReport, string fieldValueReport)
+         {
 
-			CommandLineParser parser = new PosixParser();
-			CommandLine cmd = parser.parse(options, args);
-			string fieldReport = cmd.getOptionValue("field-report");
-			string fieldValueReport = cmd.getOptionValue("field-value-report");
+             try
+             {
 
-			args = cmd.Args;
-			if (args.Length == 0)
-			{
-				Console.WriteLine("Analyze the fields in a CSV file or several " + "related input files (split files with same layout)");
-				Console.WriteLine("Specify at least one CSV input file to analyze.");
-				Environment.Exit(2);
-			}
+                 if (inputFiles.Count <= 0)
+                 {
+                     throw new Exception("No input files!");
+                 }
+                 FileInfo firstInputFile = inputFiles[0];
+                 if (fieldReport == null)
+                 {
+                     fieldReport = firstInputFile.FullName + ".fields.csv";
+                 }
+                 if (fieldValueReport == null)
+                 {
+                     fieldValueReport = firstInputFile.FullName + ".fieldvalues.csv";
+                 }
 
-			IList<File> inputFiles = new List<File>();
-			for (int i = 0; i < args.Length; i++)
-			{
-				File inputFile = new File(args[i]);
-				inputFiles.Add(inputFile);
-			}
+                 Console.WriteLine("Field Report: " + fieldReport);
+                 Console.WriteLine("Field Value Report:" + fieldValueReport);
 
-			try
-			{
-				analyze(inputFiles, fieldReport, fieldValueReport);
-			}
-			catch (Exception e)
-			{
-				e.printStackTrace(System.err);
-				Environment.Exit(1);
-			}
-		}
-	}
+                 //TODO input / output
+
+                 StreamWriter fieldReportFileWriter = new StreamWriter(fieldReport);
+                 var fieldReportCsvWriter = new CsvHelper.CsvWriter(fieldReportFileWriter);
+                 fieldReportCsvWriter.WriteRecord(FieldStats.getFieldReportHeaderRecord());
+
+                 StreamWriter fieldValueReportFileWriter = new StreamWriter(fieldValueReport);
+                 var fieldValueReportCsvWriter = new CsvHelper.CsvWriter(fieldValueReportFileWriter);
+                 fieldValueReportCsvWriter.WriteRecord(FieldStats.getFieldValueReportHeaderRecord());
+
+                 IDictionary<string, FieldStats> statsdb = new Dictionary<string, FieldStats>();
+
+                 string[] headerFields = null;
+                 int recno = 0;
+                 int headerno = 0;
+                 
+              foreach (FileInfo inputfile in inputFiles) {
+            
+                 Console.WriteLine("Analyzing input file " + 
+                         inputfile.FullName);
+                 
+                 StreamReader fileReader = new StreamReader(inputfile.FullName);
+                 var csvReader = new CsvHelper.CsvReader(fileReader);
+
+                 
+                 headerFields = csvReader.FieldHeaders;
+                 
+                 headerno++;
+
+                 while (csvReader.Read()) {
+
+                     IList<string> rec = csvReader.GetRecord<IList<string>>();
+
+                     if (rec == null) {
+                         break;
+                     }
+                     recno++;                
+
+                     int fieldno = 0;
+                     foreach (string fieldname in headerFields) {
+                         FieldStats stats = statsdb.GetValueOrNull(fieldname);
+                         if (stats == null) {
+                             stats = new FieldStats(fieldname, fieldno + 1);
+                             statsdb[fieldname] = stats;
+                         }
+                         string fieldval = rec[fieldno];
+                         stats.analyzeField(fieldval, recno);
+                         fieldno++;
+                     }
+                 }
+                 fileReader.Close();
+              
+              }
+
+             Console.WriteLine("Header CSV records read: " + headerno);
+             Console.WriteLine("Total CSV data records read: " + recno);
+             foreach (string fieldname in headerFields) {
+                 FieldStats stats = statsdb.GetValueOrNull(fieldname);
+                 fieldReportCsvWriter.WriteRecord(stats.getFieldReportRecord());
+                 IList<IList<string>> catValuesRecords = 
+                         stats.getFieldValuesReportRecords();
+            
+                 if (catValuesRecords != null) {
+                     foreach (IList<string> rec in catValuesRecords) {
+                         if (rec != null) {
+                             fieldValueReportCsvWriter.WriteRecord(rec);
+                         }
+                     }
+                 }
+             }
+
+             fieldValueReportCsvWriter.Dispose();
+             fieldReportCsvWriter.Dispose();
+            
+               
+             }
+
+             catch (Exception e)
+             {
+                 //TODO not sure how we wanted to handle errors - leaving this as an easy way to toggle on/off
+                 throw;
+             }
+         }
+         public static void Main(string[] args)
+         {
+             try
+             {
+
+
+                 Options options = new Options();
+                 options.AddOption("1", "field-report", true, "Write the field analysis report to this file. If not specified, then {inputfile}.fields.csv will be used.");
+                 options.AddOption("2", "field-value-report", true, "Write the field values analysis report to this file. If not specified, then {inputfile}.fieldvalues.csv will be used.");
+
+
+                 ICommandLineParser parser = new PosixParser();
+                 CommandLine cmd = parser.Parse(options, args);
+                 string fieldReport = cmd.GetOptionValue("field-report");
+                 string fieldValueReport = cmd.GetOptionValue("field-value-report");
+
+                 args = cmd.Args;
+                 if (args.Length == 0)
+                 {
+                     Console.WriteLine("Analyze the fields in a CSV file or several " + "related input files (split files with same layout)");
+                     Console.WriteLine("Specify at least one CSV input file to analyze.");
+                     Environment.Exit(2);
+                 }
+
+
+                 IList<FileInfo> inputFiles = new List<FileInfo>();
+                 for (int i = 0; i < args.Length; i++)
+                 {
+                     FileInfo inputFile = new FileInfo(args[i]);
+                     inputFiles.Add(inputFile);
+                 }
+                 
+                 try
+                 {
+                     analyze(inputFiles, fieldReport, fieldValueReport);
+                     
+                 }
+                 catch (Exception e)
+                 {
+                     Console.WriteLine(e.Message);
+                     Environment.Exit(1);
+                 }
+             }
+
+             catch (Exception e)
+             {
+                 //TODO not sure how we wanted to handle errors - leaving this as an easy way to toggle on/off
+                 throw;
+             }
+         }
+     }
 }
