@@ -5,11 +5,11 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProductVersion>8.0.30703</ProductVersion>
     <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>{C738110C-971E-4C02-83A3-2308343ADA3C}</ProjectGuid>
-    <OutputType>Exe</OutputType>
+    <ProjectGuid>{9131CCC5-0748-4ED5-9754-3401DE43A941}</ProjectGuid>
+    <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>AnalyzerLib</RootNamespace>
-    <AssemblyName>AnalyzerLib</AssemblyName>
+    <RootNamespace>ClassLibraryAlteryx</RootNamespace>
+    <AssemblyName>ClassLibraryAlteryx</AssemblyName>
     <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
   </PropertyGroup>
@@ -30,15 +30,10 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
-  <PropertyGroup>
-    <StartupObject />
-  </PropertyGroup>
   <ItemGroup>
-    <Reference Include="CsvHelper">
-      <HintPath>..\packages\CsvHelper.2.6.0\lib\net40-client\CsvHelper.dll</HintPath>
-    </Reference>
-    <Reference Include="dotnetcli-0.1.1">
-      <HintPath>..\..\..\..\..\..\..\csharp\dotnetcli-0.1.1.dll</HintPath>
+    <Reference Include="AlteryxGuiToolkit">
+      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Alteryx\Engine\AlteryxGuiToolkit.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -49,16 +44,10 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="Analyze.txt" />
-    <Compile Include="Analyze.cs" />
-    <Compile Include="Options.cs" />
+    <Compile Include="Class1.cs" />
+    <Compile Include="IXmlInputTool.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="java.txt" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="packages.config" />
+    <Compile Include="XmlInputToolGui.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
